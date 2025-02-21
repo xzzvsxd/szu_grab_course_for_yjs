@@ -1,0 +1,21 @@
+{
+  "credentials": {
+    "student_id": "",
+    "password": ""
+  },
+  "settings": {
+    "delay": 2,
+    "max_workers": 4,
+    "rate_limits": {
+      "hourly_limit": 1000,
+      "short_term_limit": 10,
+      "short_term_window": 5
+    }
+  },
+  "selected_courses": [],
+  "rate_tracking": {
+    "hourly_requests": [],
+    "short_term_requests": [],
+    "last_cleanup": 0
+  }
+}
