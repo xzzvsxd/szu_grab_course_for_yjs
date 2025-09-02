@@ -6,6 +6,7 @@
   "settings": {
     "delay": 2,
     "max_workers": 4,
+    "count": 100,
     "rate_limits": {
       "hourly_limit": 1000,
       "short_term_limit": 10,
