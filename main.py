@@ -4,13 +4,15 @@
 import sys
 import time
 
-import setting
 from apis import login, getCourseInfo, getAllCourseInfo, getSelectedCourse, concurrent_course_selection, \
     successful_courses, Api
 
 if __name__ == "__main__":
     api = Api()
     config = api.load_config()
+
+    # 初始化课程列表
+    courses = []
 
     # 登录
     StudentID = config.get("credentials", {}).get("student_id", "")
@@ -41,24 +43,24 @@ if __name__ == "__main__":
     getAllCourseInfo()
     api.record_request()
 
-    if len(setting.courses) == 0:
+    if len(courses) == 0:
         while True:
             id = input("请输入你要抢的课程ID，为空则退出添加流程: ")
             if id != "":
-                setting.courses.append(id)
+                courses.append(id)
             else:
                 print("未输入课程ID，退出添加流程")
                 break
 
-    if len(setting.courses) == 0:
+    if len(courses) == 0:
         print("未添加课程ID，退出抢课")
         sys.exit()
     else:
-        wait = input(f"请检查选课结果，按回车键继续:\n{setting.courses}\n")
+        wait = input(f"请检查选课结果，按回车键继续:\n{courses}\n")
 
     print("抢课开始")
     course_list = []
-    for course in setting.courses:
+    for course in courses:
         # 获取课程信息的请求限制检查
         can_request, message = api.check_rate_limits()
         if not can_request:
@@ -76,7 +78,14 @@ if __name__ == "__main__":
 
     # 主程序
     try:
-        result = concurrent_course_selection(course_list, setting, lambda: False)
+        # 从配置文件获取设置
+        config_setting = config.get("settings", {
+            "delay": 2,
+            "max_workers": 4,
+            "count": 100
+        })
+
+        result = concurrent_course_selection(course_list, config_setting, lambda: False)
         if result:
             print("所有课程抢课成功")
         else:
@@ -87,7 +96,7 @@ if __name__ == "__main__":
         sys.exit()
     except Exception as e:
         print(f"出现错误: {str(e)}")
-        print("请检查设置 setting.py 部分是否填写正确")
+        print("请检查设置 config.json 部分是否填写正确")
 
     print("抢课结束")
 
