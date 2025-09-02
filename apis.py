@@ -13,8 +13,6 @@ import js2py
 import requests
 from requests.cookies import RequestsCookieJar
 
-import setting
-
 
 # 生成当前时间戳
 def get_timestamp():
@@ -414,14 +412,14 @@ def add_message(message, type="info"):
     })
 
 
-def select_course_wrapper(course, setting):
+def select_course_wrapper(course, config_setting):
     api_wrapper = Api()
     try:
         # 检查速率限制
         can_request, message = api_wrapper.check_rate_limits()
         if not can_request:
             add_message(f"{message}", "error")
-            time.sleep(setting.delay)
+            time.sleep(config_setting.get('delay', 2))
             return False
 
         response = selectCourse(course["id"])
@@ -440,16 +438,20 @@ def select_course_wrapper(course, setting):
                 add_message(f"检测到频繁操作，随机延时 {delay_time:.2f} 秒", "info")
                 time.sleep(delay_time)
             else:
-                time.sleep(setting.delay)
+                time.sleep(config_setting.get('delay', 2))
             return False
     except Exception as e:
         add_message(f"抢课 {course['name']} 时出错: {str(e)}", "error")
         return False
 
 
-def concurrent_course_selection(course_list, setting, should_stop):
-    with concurrent.futures.ThreadPoolExecutor(max_workers=setting.max_workers) as executor:
-        for round in range(setting.count):
+def concurrent_course_selection(course_list, config_setting, should_stop):
+    max_workers = config_setting.get('max_workers', 4)
+    count = config_setting.get('count', 100)
+    delay = config_setting.get('delay', 2)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for round in range(count):
             if should_stop():
                 add_message("抢课已取消", "info")
                 return False
@@ -462,7 +464,7 @@ def concurrent_course_selection(course_list, setting, should_stop):
                 add_message("所有课程已抢到，结束抢课", "success")
                 return True
 
-            select_course_partial = partial(select_course_wrapper, setting=setting)
+            select_course_partial = partial(select_course_wrapper, config_setting=config_setting)
             futures = [executor.submit(select_course_partial, course) for course in remaining_courses]
 
             for future, course in zip(concurrent.futures.as_completed(futures), remaining_courses):
@@ -473,9 +475,9 @@ def concurrent_course_selection(course_list, setting, should_stop):
                     successful_courses.add(course['id'])
 
             add_message(f"第 {round + 1} 轮抢课结束，已抢到 {len(successful_courses)} 门课程", "info")
-            if round < setting.count - 1 and not should_stop():
+            if round < count - 1 and not should_stop():
                 add_message(f"等待下一轮...", "info")
-                time.sleep(setting.delay / 1000.0)
+                time.sleep(delay / 1000.0)
 
     return len(successful_courses) == len(course_list)
 
@@ -568,13 +570,13 @@ class Api:
                     return json.load(f)
             return {
                 "credentials": {"student_id": "", "password": ""},
-                "settings": {"delay": 1, "max_workers": 5},
+                "settings": {"delay": 1, "max_workers": 5, "count": 100},
                 "selected_courses": []
             }
         except Exception:
             return {
                 "credentials": {"student_id": "", "password": ""},
-                "settings": {"delay": 1, "max_workers": 5},
+                "settings": {"delay": 1, "max_workers": 5, "count": 100},
                 "selected_courses": []
             }
 
@@ -590,8 +592,6 @@ class Api:
         try:
             login_result = login(student_id, password)
             if login_result:
-                setting.StudentID = student_id
-                setting.Password = password
                 # 保存登录凭证
                 self.config["credentials"]["student_id"] = student_id
                 self.config["credentials"]["password"] = password
@@ -611,13 +611,16 @@ class Api:
         # 保存课程信息和设置
         self.config["settings"]["delay"] = delay
         self.config["settings"]["max_workers"] = max_workers
+        self.config["settings"]["count"] = self.config["settings"].get("count", 100)
         self.config["selected_courses"] = course_ids
         self.save_config()
 
         def run_selection():
-            setting.delay = delay
-            setting.max_workers = max_workers
-            setting.courses = course_ids
+            config_setting = {
+                'delay': delay,
+                'max_workers': max_workers,
+                'count': self.config["settings"].get("count", 100)
+            }
 
             course_list = []
             for course_id in course_ids:
@@ -629,7 +632,7 @@ class Api:
                 })
 
             try:
-                result = concurrent_course_selection(course_list, setting, lambda: self.stop_selection)
+                result = concurrent_course_selection(course_list, config_setting, lambda: self.stop_selection)
                 status = "stopped" if self.stop_selection else "completed"
                 return {"success": result, "message": "抢课完成", "status": status}
             except Exception as e:
